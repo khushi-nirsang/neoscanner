@@ -1,34 +1,17 @@
-package result
+package engine
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
-type ScanResult struct {
-	Target      string    `json:"target"`
-	Name        string    `json:"name"`
-	Severity    string    `json:"severity"`
-	Matched     bool      `json:"matched"`
-	Description string    `json:"description"`
-	Timestamp   time.Time `json:"timestamp"`
+// Executor will handle YAML template execution (Nuclei style)
+type Executor struct {
+	TemplatesDir string
 }
 
-type Results struct {
-	Items []ScanResult
+func NewExecutor(templatesDir string) *Executor {
+	return &Executor{TemplatesDir: templatesDir}
 }
 
-func NewResults() *Results {
-	return &Results{Items: []ScanResult{}}
-}
-
-func (r *Results) Add(res ScanResult) {
-	res.Timestamp = time.Now()
-	r.Items = append(r.Items, res)
-}
-
-func (r *Results) Print() {
-	for _, item := range r.Items {
-		fmt.Printf("[%s] %s → %s\n", item.Severity, item.Name, item.Target)
-	}
+func (e *Executor) ExecuteTemplate(target string, templateName string) {
+	// TODO: Full YAML template parsing & execution logic
+	fmt.Printf("🔧 Executing template: %s on %s (coming soon...)\n", templateName, target)
 }
