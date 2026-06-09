@@ -1,8 +1,18 @@
-id: basic-xss
+id: xss-probe
+
 info:
-  name: Basic XSS Check
-  severity: high
-  description: Tests for reflected XSS
+  name: Reflected XSS Probe
+  author: khushi-nirsang
+  severity: medium
+  description: Basic check for potential XSS in query parameters
+
 requests:
   - method: GET
-    path: "/?search=<script>alert(1)</script>"
+    path:
+      - "{{BaseURL}}/?search=test%3Cscript%3Ealert(1)%3C/script%3E"
+    matchers:
+      - type: word
+        part: body
+        words:
+          - "<script>alert(1)</script>"
+        condition: and
