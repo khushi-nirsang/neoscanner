@@ -13,39 +13,49 @@ import (
 var (
 	target  string
 	threads int
+	output  string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "neoscanner",
 	Short: "NeoScanner - Next Generation Vulnerability Scanner",
-	Long:  `A fast and extensible vulnerability scanner.`,
+	Long:  `A fast, extensible, template-based vulnerability scanner.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		color.Cyan("NeoScanner starting...")
 
+		// Load configuration
 		cfg, err := config.LoadConfig()
 		if err != nil {
 			color.Red("Config error: %v", err)
 			os.Exit(1)
 		}
 
-		// Override config with flags
-		if target != "" {
-			cfg.Target = target // This may need adjustment based on your config
-		}
+		// Override threads if user provided
 		if threads > 0 {
 			cfg.Threads = threads
 		}
 
-		scanner := engine.NewScanner(cfg.Threads) // Adjust based on your engine
-		results := scanner.StartScan(target)      // Passing target directly for now
+		color.Cyan("[*] Scanning %s with %d threads", target, cfg.Threads)
 
-		color.Green("Done. Findings: %d", len(results))
+		// Start scanning
+		scanner := engine.NewScanner(cfg.Threads)
+		scanner.StartScan(target)
+
+		// Save results
+		outputFile := "reports/results.json"
+		if output != "" {
+			outputFile = output
+		}
+		scanner.SaveResults(outputFile)
+
+		color.Green("Done. Findings: %d", len(scanner.Results.Items))
 	},
 }
 
 func init() {
-	rootCmd.Flags().StringVarP(&target, "target", "u", "", "Target URL (required)")
-	rootCmd.Flags().IntVarP(&threads, "threads", "c", 50, "Number of threads")
+	rootCmd.Flags().StringVarP(&target, "target", "u", "", "Target URL or IP (required)")
+	rootCmd.Flags().IntVarP(&threads, "threads", "c", 50, "Number of concurrent threads")
+	rootCmd.Flags().StringVarP(&output, "output", "o", "", "Output JSON file path")
 
 	rootCmd.MarkFlagRequired("target")
 }
