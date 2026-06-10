@@ -27,10 +27,12 @@ type Request struct {
 }
 
 type Matcher struct {
-	Type      string   `yaml:"type"`
-	Part      string   `yaml:"part"`
+	Type      string   `yaml:"type"`      // word, status, regex
+	Part      string   `yaml:"part"`      // body, header
 	Words     []string `yaml:"words"`
-	Condition string   `yaml:"condition"`
+	Status    []int    `yaml:"status"`
+	Negative  bool     `yaml:"negative"`
+	Condition string   `yaml:"condition"` // and / or
 }
 
 func LoadTemplate(filePath string) (*Template, error) {
