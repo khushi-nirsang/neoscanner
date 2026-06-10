@@ -1,8 +1,11 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/fatih/color"
 	"github.com/khushi-nirsang/neoscanner/internal/config"
@@ -11,15 +14,17 @@ import (
 )
 
 var (
-	target       string
-	threads      int
-	templateDir  string
+	target      string
+	targetList  string
+	threads     int
+	templateDir string
+	severity    string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "neoscanner",
 	Short: "NeoScanner - Next Generation Vulnerability Scanner",
-	Long:  `A fast, extensible, template-based vulnerability scanner.`,
+	Long:  `A fast, extensible, template-based vulnerability scanner`,
 	Run: func(cmd *cobra.Command, args []string) {
 		color.Cyan("NeoScanner starting...")
 
@@ -33,34 +38,81 @@ var rootCmd = &cobra.Command{
 			cfg.Threads = threads
 		}
 
-		color.Cyan("[*] Scanning %s with %d threads", target, cfg.Threads)
-
-		// Create scanner
 		scanner := engine.NewScanner(cfg.Threads, cfg.Timeout)
 
-		// Load templates
 		if templateDir == "" {
 			templateDir = "templates"
 		}
 		scanner.LoadTemplates(templateDir)
 
-		// Start scan
-		scanner.StartScan(target)
+		targets := getTargets(target, targetList)
+		if len(targets) == 0 {
+			color.Red("Error: Please provide target using -u <url> or -l <targets.txt>")
+			os.Exit(1)
+		}
 
-		// Save results
-		outputFile := "reports/results.json"
-		scanner.SaveResults(outputFile)
+		color.Cyan("[*] Starting scan on %d target(s) | Threads: %d | Severity: %s", len(targets), cfg.Threads, severity)
 
-		color.Green("\n✅ Done. Findings: %d", len(scanner.Results.Items))
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, cfg.Threads)
+
+		for _, t := range targets {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+
+			wg.Add(1)
+			sem <- struct{}{}
+
+			go func(url string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				color.Cyan("[→] Scanning: %s", url)
+				scanner.StartScan(url)
+			}(t)
+		}
+
+		wg.Wait()
+
+		scanner.SaveResults("reports/results.json", severity)
+		color.Green("\n✅ Scan completed. Total Findings: %d", len(scanner.Results.Items))
 	},
 }
 
+func getTargets(single, listFile string) []string {
+	var targets []string
+
+	if single != "" {
+		targets = append(targets, single)
+	}
+
+	if listFile != "" {
+		file, err := os.Open(listFile)
+		if err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line != "" && !strings.HasPrefix(line, "#") {
+					targets = append(targets, line)
+				}
+			}
+		}
+	}
+
+	return targets
+}
+
 func init() {
-	rootCmd.Flags().StringVarP(&target, "target", "u", "", "Target URL or IP (required)")
+	rootCmd.Flags().StringVarP(&target, "target", "u", "", "Single target URL")
+	rootCmd.Flags().StringVarP(&targetList, "list", "l", "", "Target list file (one per line)")
 	rootCmd.Flags().IntVarP(&threads, "threads", "c", 50, "Number of concurrent threads")
 	rootCmd.Flags().StringVarP(&templateDir, "templates", "t", "templates", "Templates directory")
+	rootCmd.Flags().StringVarP(&severity, "severity", "s", "", "Filter severity (info,low,medium,high,critical)")
 
-	rootCmd.MarkFlagRequired("target")
+	// Removed MarkFlagRequired so both -u and -l work
 }
 
 func Execute() {
