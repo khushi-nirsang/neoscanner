@@ -6,9 +6,10 @@ import (
 )
 
 type Config struct {
-	Threads     int    `mapstructure:"threads"`
-	Timeout     int    `mapstructure:"timeout"`
-	OutputDir   string `mapstructure:"output_dir"`
+	Target    string `mapstructure:"target"`
+	Threads   int    `mapstructure:"threads"`
+	Timeout   int    `mapstructure:"timeout"`
+	OutputDir string `mapstructure:"output_dir"`
 }
 
 func LoadConfig() (*Config, error) {
@@ -16,12 +17,13 @@ func LoadConfig() (*Config, error) {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("configs")
 
+	// Default values
 	viper.SetDefault("threads", 50)
 	viper.SetDefault("timeout", 10)
 	viper.SetDefault("output_dir", "reports")
 
 	if err := viper.ReadInConfig(); err != nil {
-		fmt.Println("Using default config")
+		fmt.Println("ℹ️ Using default configuration")
 	}
 
 	var cfg Config
@@ -29,6 +31,6 @@ func LoadConfig() (*Config, error) {
 		return nil, err
 	}
 
-	fmt.Printf("📋 Config loaded: %d threads\n", cfg.Threads)
+	fmt.Printf("📋 Config loaded: %d threads, %d sec timeout\n", cfg.Threads, cfg.Timeout)
 	return &cfg, nil
 }

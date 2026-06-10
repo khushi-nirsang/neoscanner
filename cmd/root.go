@@ -1,91 +1,123 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
-	"path/filepath"
+	"strings"
+	"sync"
 
+	"github.com/fatih/color"
+	"github.com/khushi-nirsang/neoscanner/internal/config"
+	"github.com/khushi-nirsang/neoscanner/internal/engine"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
-	
-	// Import the scanner engine
-	"github.com/khushi-nirsang/neoscanner/internal/scanner"
 )
 
 var (
-	cfgFile    string
-	targetURL  string
-	targetFile string
-	templates  string
-	threads    int
-	outputFile string
-	severity   string
+	target      string
+	targetList  string
+	threads     int
+	templateDir string
+	severity    string
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "neoscanner",
-	Short: "NeoScanner - Next-Gen Vulnerability Scanner",
-	Long:  `NeoScanner - Better than Nessus & Nuclei`,
+	Short: "NeoScanner - Next Generation Vulnerability Scanner",
+	Long:  `A fast, extensible, template-based vulnerability scanner`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if targetURL == "" && targetFile == "" {
-			cmd.Help()
+		color.Cyan("NeoScanner starting...")
+
+		cfg, err := config.LoadConfig()
+		if err != nil {
+			color.Red("Config error: %v", err)
 			os.Exit(1)
 		}
-		fmt.Println("🚀 NeoScanner Starting...")
-		startScan()
+
+		if threads > 0 {
+			cfg.Threads = threads
+		}
+
+		scanner := engine.NewScanner(cfg.Threads, cfg.Timeout)
+
+		if templateDir == "" {
+			templateDir = "templates"
+		}
+		scanner.LoadTemplates(templateDir)
+
+		targets := getTargets(target, targetList)
+		if len(targets) == 0 {
+			color.Red("Error: Please provide target using -u <url> or -l <targets.txt>")
+			os.Exit(1)
+		}
+
+		color.Cyan("[*] Starting scan on %d target(s) | Threads: %d | Severity: %s", len(targets), cfg.Threads, severity)
+
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, cfg.Threads)
+
+		for _, t := range targets {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+
+			wg.Add(1)
+			sem <- struct{}{}
+
+			go func(url string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				color.Cyan("[→] Scanning: %s", url)
+				scanner.StartScan(url)
+			}(t)
+		}
+
+		wg.Wait()
+
+		scanner.SaveResults("reports/results.json", severity)
+		color.Green("\n✅ Scan completed. Total Findings: %d", len(scanner.Results.Items))
 	},
 }
 
-func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
-		os.Exit(1)
+func getTargets(single, listFile string) []string {
+	var targets []string
+
+	if single != "" {
+		targets = append(targets, single)
 	}
+
+	if listFile != "" {
+		file, err := os.Open(listFile)
+		if err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if line != "" && !strings.HasPrefix(line, "#") {
+					targets = append(targets, line)
+				}
+			}
+		}
+	}
+
+	return targets
 }
 
 func init() {
-	cobra.OnInitialize(initConfig)
-
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is config.yaml)")
-	
-	rootCmd.Flags().StringVarP(&targetURL, "target", "u", "", "Target URL or IP (e.g. https://example.com)")
-	rootCmd.Flags().StringVarP(&targetFile, "list", "l", "", "File containing list of targets")
-	rootCmd.Flags().StringVarP(&templates, "templates", "t", "templates", "Templates directory")
+	rootCmd.Flags().StringVarP(&target, "target", "u", "", "Single target URL")
+	rootCmd.Flags().StringVarP(&targetList, "list", "l", "", "Target list file (one per line)")
 	rootCmd.Flags().IntVarP(&threads, "threads", "c", 50, "Number of concurrent threads")
-	rootCmd.Flags().StringVarP(&outputFile, "output", "o", "results.json", "Output file")
-	rootCmd.Flags().StringVarP(&severity, "severity", "s", "medium", "Severity filter (info,low,medium,high,critical)")
+	rootCmd.Flags().StringVarP(&templateDir, "templates", "t", "templates", "Templates directory")
+	rootCmd.Flags().StringVarP(&severity, "severity", "s", "", "Filter severity (info,low,medium,high,critical)")
 
-	rootCmd.AddCommand(versionCmd)
+	// Removed MarkFlagRequired so both -u and -l work
 }
 
-func initConfig() {
-	if cfgFile != "" {
-		viper.SetConfigFile(cfgFile)
-	} else {
-		viper.AddConfigPath(".")
-		viper.SetConfigName("config")
-	}
-	viper.AutomaticEnv()
-	viper.ReadInConfig()
-}
-
-var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Show version",
-	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("NeoScanner v0.1.0")
-	},
-}
-
-// Updated startScan function - Connected with Engine
-func startScan() {
-	// Create scanner engine
-	engine := scanner.NewEngine(threads, templates)
-
-	if targetURL != "" {
-		engine.StartScan(targetURL)
-		engine.SaveResults(outputFile)
-	} else if targetFile != "" {
-		fmt.Println("Multiple targets support coming soon...")
+func Execute() {
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println(err)
+		os.Exit(1)
 	}
 }
